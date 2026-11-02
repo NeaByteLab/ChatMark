@@ -1,0 +1,73 @@
+{
+  "name": "@neabyte/chatmark",
+  "description": "Expressive text formatting syntax built for everyday chat conversations",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "unbuild --minify",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "rm -rf dist && npm run build"
+  },
+  "keywords": [
+    "autolink",
+    "blockquotes",
+    "chat-formatting",
+    "chat-markup",
+    "chat-messages",
+    "chat-syntax",
+    "chat-ui",
+    "code-blocks",
+    "conversational-ui",
+    "inline-formatting",
+    "instant-messaging",
+    "markup-syntax",
+    "message-formatting",
+    "message-styling",
+    "messaging-apps",
+    "rich-text",
+    "social-chat",
+    "text-formatting",
+    "text-styling",
+    "user-mentions"
+  ],
+  "dependencies": {},
+  "devDependencies": {
+    "@typescript/typescript6": "^6.0.2",
+    "unbuild": "^3.6.1"
+  },
+  "author": {
+    "name": "NeaByteLab",
+    "email": "me@neabyte.com",
+    "url": "https://github.com/NeaByteLab"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NeaByteLab/ChatMark.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NeaByteLab/ChatMark/issues"
+  },
+  "homepage": "https://github.com/NeaByteLab/ChatMark#readme",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
