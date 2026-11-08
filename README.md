@@ -134,8 +134,8 @@ console.log(doc)
 | Fenced code block | ` ```lang `                | `<pre><code class="chatmark-codeblock-lang">...</code></pre>`         |
 | Bullet list       | `- item`                   | `<ul>\n<li>item</li>\n</ul>`                                          |
 | Ordered list      | `1. item`                  | `<ol>\n<li>item</li>\n</ol>`                                          |
-| Strong            | `*text*`                   | `<strong>text</strong>`                                               |
-| Emphasis          | `_text_`                   | `<em>text</em>`                                                       |
+| Strong            | `*text*` or `**text**`     | `<strong>text</strong>`                                               |
+| Emphasis          | `_text_` or `__text__`     | `<em>text</em>`                                                       |
 | Strikethrough     | `~text~` or `~~text~~`     | `<del>text</del>`                                                     |
 | Inline code       | `` `code` ``               | `<code>code</code>`                                                   |
 | Mention           | `@handle`                  | `<span class="chatmark-mention" data-mention="handle">@handle</span>` |
