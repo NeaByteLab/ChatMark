@@ -1,12 +1,12 @@
 /**
- * Emphasis or strikethrough delimiter node.
+ * Emphasis delimiter node.
  * @description Tracks delimiter token, flanking flags, and linked neighbors.
  */
 export interface ChatmarkDelimiter {
   /** Delimiter character token */
   token: ChatmarkToken
-  /** Associated inline segment slot */
-  entry: ChatmarkSegment
+  /** Associated inline text node */
+  entry: ChatmarkInline
   /** Number of repeated characters */
   length: number
   /** True when delimiter can open */
@@ -19,10 +19,7 @@ export interface ChatmarkDelimiter {
   after: ChatmarkDelimiter | undefined
 }
 
-/**
- * Root Chatmark document node.
- * @description Holds parsed top-level block elements in document order.
- */
+/** Root Chatmark document node. */
 export interface ChatmarkDocument {
   /** Root document node discriminator */
   type: 'document'
@@ -30,19 +27,13 @@ export interface ChatmarkDocument {
   children: ChatmarkBlock[]
 }
 
-/**
- * Single list item container.
- * @description Holds paragraph blocks belonging to one list item.
- */
+/** Single list item container. */
 export interface ChatmarkItem {
   /** Paragraph nodes inside list item */
   children: ChatmarkParagraph[]
 }
 
-/**
- * Parsed list marker metadata.
- * @description Stores list ordering flag, start index, and line text.
- */
+/** Parsed list marker metadata. */
 export interface ChatmarkList {
   /** True when list is numbered */
   ordered: boolean
@@ -52,10 +43,7 @@ export interface ChatmarkList {
   content: string
 }
 
-/**
- * Block-level paragraph node.
- * @description Contains parsed inline elements for one text paragraph.
- */
+/** Block-level paragraph node. */
 export interface ChatmarkParagraph {
   /** Paragraph block node discriminator */
   type: 'paragraph'
@@ -63,19 +51,7 @@ export interface ChatmarkParagraph {
   children: ChatmarkInline[]
 }
 
-/**
- * Mutable inline segment wrapper.
- * @description Wraps an inline node during delimiter resolution pass.
- */
-export interface ChatmarkSegment {
-  /** Wrapped inline AST node */
-  value: ChatmarkInline
-}
-
-/**
- * Matched substring slice result.
- * @description Stores extracted token value and next scan index.
- */
+/** Matched substring slice result. */
 export interface ChatmarkSlice {
   /** Extracted substring token value */
   value: string
@@ -89,84 +65,23 @@ export interface ChatmarkSlice {
  */
 export type ChatmarkBlock =
   | ChatmarkParagraph
-  | {
-    /** Blockquote node discriminator */
-    type: 'blockquote'
-    /** Nested block nodes inside quote */
-    children: ChatmarkBlock[]
-  }
-  | {
-    /** Fenced codeblock node discriminator */
-    type: 'codeblock'
-    /** Optional code language identifier */
-    lang: string
-    /** Raw code block text content */
-    code: string
-  }
-  | {
-    /** List block node discriminator */
-    type: 'list'
-    /** True when list is numbered */
-    ordered: boolean
-    /** Starting number for ordered list */
-    start: number
-    /** List item nodes in sequence */
-    items: ChatmarkItem[]
-  }
+  | { type: 'blockquote'; children: ChatmarkBlock[] }
+  | { type: 'codeblock'; lang: string; code: string }
+  | { type: 'list'; ordered: boolean; start: number; items: ChatmarkItem[] }
 
 /**
  * Inline-level AST node union.
  * @description Represents text, mention, formatting spans, code, autolink, or break.
  */
 export type ChatmarkInline =
-  | {
-    /** Plain text node discriminator */
-    type: 'text'
-    /** Raw unescaped text value */
-    value: string
-  }
-  | {
-    /** User mention node discriminator */
-    type: 'mention'
-    /** Validated username without leading symbol */
-    value: string
-  }
-  | {
-    /** Bold span node discriminator */
-    type: 'strong'
-    /** Nested inline nodes inside bold */
-    children: ChatmarkInline[]
-  }
-  | {
-    /** Italic span node discriminator */
-    type: 'emphasis'
-    /** Nested inline nodes inside italic */
-    children: ChatmarkInline[]
-  }
-  | {
-    /** Strikethrough span node discriminator */
-    type: 'strike'
-    /** Nested inline nodes inside strikethrough */
-    children: ChatmarkInline[]
-  }
-  | {
-    /** Inline code node discriminator */
-    type: 'code'
-    /** Raw inline code string value */
-    value: string
-  }
-  | {
-    /** Autolink URL node discriminator */
-    type: 'autolink'
-    /** Percent-encoded destination URL string */
-    href: string
-    /** Visible link text before encoding */
-    text: string
-  }
-  | {
-    /** Hard line break node discriminator */
-    type: 'break'
-  }
+  | { type: 'text'; value: string }
+  | { type: 'mention'; value: string }
+  | { type: 'strong'; children: ChatmarkInline[] }
+  | { type: 'emphasis'; children: ChatmarkInline[] }
+  | { type: 'strike'; children: ChatmarkInline[] }
+  | { type: 'code'; value: string }
+  | { type: 'autolink'; href: string; text: string }
+  | { type: 'break' }
 
 /** Delimiter token for inline formatting */
 export type ChatmarkToken = '*' | '_' | '~'
