@@ -4,16 +4,18 @@ import Inline from '@app/inline.ts'
 
 Deno.test('inline - parses bold, italic, and strikethrough spans', () => {
   Assert.assertEquals(
-    Chatmark.html('*bold* _italic_ ~strike~ ~~double~~'),
-    '<p><strong>bold</strong> <em>italic</em> <del>strike</del> <del>double</del></p>'
+    Chatmark.html('*bold* **bold** _italic_ __italic__ ~strike~ ~~double~~'),
+    '<p><strong>bold</strong> <strong>bold</strong> <em>italic</em> <em>italic</em> <del>strike</del> <del>double</del></p>'
   )
   Assert.assertEquals(
-    Chatmark.html('*bold\nline 2* _italic\nline 2_ ~strike\nline 2~ ~~double\nline 2~~'),
-    '<p><strong>bold\nline 2</strong> <em>italic\nline 2</em> <del>strike\nline 2</del> <del>double\nline 2</del></p>'
+    Chatmark.html(
+      '*bold\nline 2* **bold\nline 2** _italic\nline 2_ __italic\nline 2__ ~strike\nline 2~ ~~double\nline 2~~'
+    ),
+    '<p><strong>bold\nline 2</strong> <strong>bold\nline 2</strong> <em>italic\nline 2</em> <em>italic\nline 2</em> <del>strike\nline 2</del> <del>double\nline 2</del></p>'
   )
   Assert.assertEquals(
-    Chatmark.html('**not bold** ___not italic___ ~~~not strike~~~'),
-    '<p>**not bold** ___not italic___ ~~~not strike~~~</p>'
+    Chatmark.html('***not bold*** ___not italic___ ~~~not strike~~~'),
+    '<p>***not bold*** ___not italic___ ~~~not strike~~~</p>'
   )
 })
 
@@ -70,6 +72,20 @@ Deno.test('inline - resolves combined syntax without conflicts', () => {
       '<strong>first</strong> <a href="https://example.com/foo*bar*">https://example.com/foo*bar*</a> and ' +
       '<del>first</del> <a href="https://example.com/~user~">https://example.com/~user~</a> and ' +
       '~<a href="https://example.com/a~~">https://example.com/a~~</a></p>'
+  )
+  Assert.assertEquals(
+    Chatmark.html(
+      '**__~~@alice_1.bob~~__** and __@alice_bob__ and __@alice_bob.__ and **https://example.com** and __https://example.com__'
+    ),
+    '<p><strong><em><del><span class="chatmark-mention" data-mention="alice_1.bob">@alice_1.bob</span></del></em></strong> and ' +
+      '<em><span class="chatmark-mention" data-mention="alice_bob">@alice_bob</span></em> and ' +
+      '<em><span class="chatmark-mention" data-mention="alice_bob">@alice_bob</span>.</em> and ' +
+      '<strong><a href="https://example.com">https://example.com</a></strong> and ' +
+      '<em><a href="https://example.com">https://example.com</a></em></p>'
+  )
+  Assert.assertEquals(
+    Chatmark.html(Array.from({ length: 500 }, (_, index) => '`'.repeat(index + 1) + 'a').join('')),
+    `<p>${Array.from({ length: 500 }, (_, index) => '`'.repeat(index + 1) + 'a').join('')}</p>`
   )
   Assert.assertEquals(
     Chatmark.html('*a _b* @alice_ and *a _b* https://example.com/foo_bar_'),
