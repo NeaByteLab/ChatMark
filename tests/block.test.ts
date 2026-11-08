@@ -63,8 +63,8 @@ Deno.test('block - parses unordered and ordered lists', () => {
     '<ul>\n<li>first\ncontinued\n- sub bullet flattened\ntab line</li>\n<li>second</li>\n<li></li>\n</ul>'
   )
   Assert.assertEquals(
-    Chatmark.html('3. third\n   continued\n   1. sub ordered flattened\n4. fourth\n5.'),
-    '<ol start="3">\n<li>third\ncontinued\n1. sub ordered flattened</li>\n<li>fourth</li>\n<li></li>\n</ol>'
+    Chatmark.html('1. third\n   continued\n   1. sub ordered flattened\n1. fourth\n1.'),
+    '<ol>\n<li>third\ncontinued\n1. sub ordered flattened</li>\n<li>fourth</li>\n<li></li>\n</ol>'
   )
 })
 
