@@ -3,33 +3,28 @@ import Block from '@app/block.ts'
 import Render from '@app/render.ts'
 
 /**
- * Public Chatmark parser and renderer.
- * @description Parses lightweight chat markup into AST or HTML string.
+ * Chatmark parser and renderer.
+ * @description Provides HTML output and document parsing.
  */
 export default class Chatmark {
   /**
-   * Render Chatmark source to HTML.
-   * @description Parses markup into blocks and renders HTML string.
-   * @param source - Raw Chatmark input string
-   * @returns Rendered HTML string output
+   * Convert markdown to HTML string.
+   * @description Parses markdown and renders all blocks to HTML.
+   * @param markdown - Raw markdown input string
+   * @returns HTML string of rendered blocks
    */
-  static html(source: string): string {
-    return Chatmark.parse(source)
-      .children.map((element) => Render.block(element))
-      .join('\n')
+  static html(markdown: string): string {
+    return Chatmark.parse(markdown).children.map((block) => Render.block(block)).join('\n')
   }
 
   /**
-   * Parse Chatmark source into AST.
-   * @description Converts raw markup text into a document AST object.
-   * @param source - Raw Chatmark input string
-   * @returns Parsed Chatmark document tree
+   * Parse markdown into document tree.
+   * @description Converts markdown string to structured document.
+   * @param markdown - Raw markdown input string
+   * @returns Parsed chatmark document tree
    */
-  static parse(source: string): Types.ChatmarkDocument {
-    return {
-      type: 'document',
-      children: Block.parse(source)
-    }
+  static parse(markdown: string): Types.ChatmarkDocument {
+    return { type: 'document', children: Block.parse(markdown) }
   }
 }
 
