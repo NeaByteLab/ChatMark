@@ -1,25 +1,25 @@
 import type * as Types from '@app/types.ts'
 
 /**
- * Inline-level Chatmark token parser.
+ * Inline-level token parser.
  * @description Parses mentions, URLs, code spans, escapes, and emphasis tokens.
  */
 export default class Inline {
   /**
    * Merge adjacent text segment nodes.
-   * @description Filters empty text slots and concatenates adjacent text nodes.
-   * @param slots - Segment slots to assemble
+   * @description Filters empty text nodes and concatenates adjacent text.
+   * @param segments - Inline nodes to assemble
    * @returns Compact array of inline nodes
    */
-  static assemble(slots: Types.ChatmarkSegment[]): Types.ChatmarkInline[] {
+  static assemble(segments: Types.ChatmarkInline[]): Types.ChatmarkInline[] {
     const nodes: Types.ChatmarkInline[] = []
-    for (const entry of slots) {
-      if (entry.value.type !== 'text' || entry.value.value.length > 0) {
+    for (const segment of segments) {
+      if (segment.type !== 'text' || segment.value.length > 0) {
         const previous = nodes[nodes.length - 1]
-        if (entry.value.type === 'text' && previous?.type === 'text') {
-          previous.value = `${previous.value}${entry.value.value}`
+        if (segment.type === 'text' && previous?.type === 'text') {
+          previous.value += segment.value
         } else {
-          nodes.push(entry.value)
+          nodes.push(segment)
         }
       }
     }
@@ -27,175 +27,193 @@ export default class Inline {
   }
 
   /**
-   * Parse inline text into AST.
-   * @description Scans inline tokens and resolves matching emphasis delimiter pairs.
-   * @param source - Raw paragraph or item text
+   * Parse inline tokens from markdown.
+   * @description Extracts and resolves all inline formatting tokens.
+   * @param markdown - Inline markdown source string
    * @returns Array of parsed inline nodes
    */
-  static parse(source: string): Types.ChatmarkInline[] {
-    const input = source.replace(/\n[ \t]*/g, '\n').replace(/(?<![ \t])[ \t]+$/, '')
-    const slots: Types.ChatmarkSegment[] = []
-    const active: Types.ChatmarkDelimiter[] = []
-    let first: Types.ChatmarkDelimiter | undefined
-    let marker: Types.ChatmarkDelimiter | undefined
-    let index = 0
-    const append = (value: Types.ChatmarkInline): Types.ChatmarkSegment => {
-      const entry: Types.ChatmarkSegment = { value }
-      slots.push(entry)
-      return entry
+  static parse(markdown: string): Types.ChatmarkInline[] {
+    const source = markdown.replace(/\n[ \t]*/g, '\n').replace(/(?<![ \t])[ \t]+$/, '')
+    const segments: Types.ChatmarkInline[] = []
+    const delimiters: Types.ChatmarkDelimiter[] = []
+    let origin: Types.ChatmarkDelimiter | undefined
+    let latest: Types.ChatmarkDelimiter | undefined
+    let cursor = 0
+    let scanned = -1
+    const backticks = new Map<number, number[]>()
+    const append = (value: Types.ChatmarkInline): Types.ChatmarkInline => {
+      segments.push(value)
+      return value
     }
-    const opened = (token: Types.ChatmarkToken, length = 1): boolean =>
-      active.some((entry) => entry.token === token && entry.length === length)
-    while (index < input.length) {
-      const token = input[index] ?? ''
-      if (token === '\n') {
-        const prior = slots[slots.length - 1]?.value
+    const check = (token: Types.ChatmarkToken, length = 1): boolean =>
+      delimiters.some((delimiter) => delimiter.token === token && delimiter.length === length)
+    while (cursor < source.length) {
+      const symbol = source[cursor] ?? ''
+      if (symbol === '\n') {
+        const prior = segments[segments.length - 1]
         const broken = prior?.type === 'text' && prior.value.endsWith('  ')
         if (prior?.type === 'text' && broken) {
           prior.value = prior.value.replace(/(?<! ) +$/, '')
         }
         append(broken ? { type: 'break' } : { type: 'text', value: '\n' })
-        index++
+        cursor++
         continue
       }
-      if (token === '\\') {
-        const following = input[index + 1] ?? ''
-        const valid = following === '\n' ||
+      if (symbol === '\\') {
+        const following = source[cursor + 1] ?? ''
+        const escaped = following === '\n' ||
           (following.length > 0 && /[!-/:-@[-`{-~]/.test(following))
         append(
-          following === '\n' ? { type: 'break' } : { type: 'text', value: valid ? following : '\\' }
+          following === '\n'
+            ? { type: 'break' }
+            : { type: 'text', value: escaped ? following : '\\' }
         )
-        index += valid ? 2 : 1
+        cursor += escaped ? 2 : 1
         continue
       }
-      if (token === '`') {
-        const count = Inline.series(input, index, '`').length
-        let matched: Types.ChatmarkSlice | undefined
-        for (
-          let cursor = index + count;
-          cursor < input.length && input[cursor] !== '\n';
-          cursor++
-        ) {
-          if (input[cursor] === '`') {
-            const length = Inline.series(input, cursor, '`').length
-            if (length === count) {
-              matched = {
-                value: input.slice(index + count, cursor).replace(/^ (?! +$)(.*) $/, '$1'),
-                limit: cursor + length
+      if (symbol === '`') {
+        const length = Inline.series(source, cursor, '`').length
+        if (cursor > scanned) {
+          backticks.clear()
+          let pointer = cursor + length
+          while (pointer < source.length && source[pointer] !== '\n') {
+            if (source[pointer] === '`') {
+              const run = Inline.series(source, pointer, '`').length
+              const list = backticks.get(run)
+              if (list !== undefined) {
+                list.push(pointer)
+              } else {
+                backticks.set(run, [pointer])
               }
-              break
+              pointer += run
+              continue
             }
-            cursor += length - 1
+            pointer++
           }
+          scanned = pointer
         }
-        append(
-          matched !== undefined
-            ? { type: 'code', value: matched.value }
-            : { type: 'text', value: '`'.repeat(count) }
-        )
-        index = matched !== undefined ? matched.limit : index + count
+        const candidates = backticks.get(length)
+        const closing = candidates?.find((position) => position >= cursor + length)
+        if (closing !== undefined) {
+          append({
+            type: 'code',
+            value: source.slice(cursor + length, closing).replace(/^ (?! +$)(.*) $/, '$1')
+          })
+          cursor = closing + length
+        } else {
+          append({ type: 'text', value: '`'.repeat(length) })
+          cursor += length
+        }
         continue
       }
-      if (token === '@' || token === 'h' || token === 'H') {
+      if (symbol === '@' || symbol === 'h' || symbol === 'H') {
         let match: Types.ChatmarkSlice | undefined
-        if (index === 0 || /[\s([<{'"*_~,:;!?/]/.test(input[index - 1] ?? '')) {
-          if (token === '@') {
-            const slice = input.slice(index, index + 40)
-            let handle = /^@([a-z0-9._]+)/.exec(slice)?.[1] ?? ''
-            const count = (target: string, symbol: string): number =>
-              target.split(symbol).length - 1
+        if (cursor === 0 || /[\s([<{'"*_~,:;!?/]/.test(source[cursor - 1] ?? '')) {
+          if (symbol === '@') {
+            const buffer = source.slice(cursor, cursor + 40)
+            let handle = /^@([a-z0-9._]+)/.exec(buffer)?.[1] ?? ''
+            const count = (target: string, character: string): number =>
+              target.split(character).length - 1
             if (handle.endsWith('.')) {
               handle = handle.slice(0, -1)
             }
-            if (/(?<!_)_$/.test(handle) && opened('_')) {
+            let shift = 1
+            if (/(?<!_)__$/.test(handle) && check('_', 2)) {
+              handle = handle.slice(0, -2)
+              shift = 2
+            } else if (/(?<!_)_$/.test(handle) && check('_', 1)) {
               handle = handle.slice(0, -1)
-              if (handle.endsWith('.')) {
-                handle = handle.slice(0, -1)
-              }
             }
-            const trailing = slice[1 + handle.length] ?? ''
-            const following = slice[2 + handle.length] ?? ''
+            if (handle.endsWith('.')) {
+              handle = handle.slice(0, -1)
+            }
+            const opened = check('_', 1) || check('_', 2)
+            const trailing = buffer[1 + handle.length] ?? ''
+            const following = buffer[1 + handle.length + (trailing === '_' ? shift : 1)] ?? ''
             if (
-              handle.length >= 3 &&
-              handle.length <= 35 &&
-              !handle.startsWith('.') &&
-              !handle.endsWith('.') &&
-              count(handle, '.') <= 1 &&
-              count(handle, '_') <= 1 &&
+              handle.length >= 3 && handle.length <= 35 && !handle.startsWith('.') &&
+              !handle.endsWith('.') && count(handle, '.') <= 1 && count(handle, '_') <= 1 &&
               !/[a-zA-Z0-9@]/.test(trailing) &&
-              !(
-                trailing === '.' &&
-                (/[a-zA-Z0-9@.]/.test(following) ||
-                  (following === '_' && !opened('_')))
-              ) &&
-              !(
-                trailing === '_' &&
-                (/[a-zA-Z0-9@_]/.test(following) ||
-                  (following === '.' && !opened('_')))
-              )
+              !(trailing === '.' &&
+                (/[a-zA-Z0-9@.]/.test(following) || (following === '_' && !opened))) &&
+              !(trailing === '_' &&
+                (/[a-zA-Z0-9@_]/.test(following) || (following === '.' && !opened)))
             ) {
-              match = { value: handle, limit: index + 1 + handle.length }
+              match = { value: handle, limit: cursor + 1 + handle.length }
             }
           } else {
             let target =
-              /^https?:\/\/[^\s<>"{}|\\^`\p{Cc}]+/iu.exec(input.slice(index, index + 2080))?.[0] ??
-                ''
-            while (target.length > 0) {
-              const stripped: string = target.replace(/&[a-zA-Z][a-zA-Z0-9]*;$|[?!.,:;']$/, '')
-              if (stripped !== target) {
-                target = stripped
-              } else if (
-                (target.endsWith(')') && target.split(')').length > target.split('(').length) ||
-                (target.endsWith(']') && target.split(']').length > target.split('[').length) ||
-                (/(?<!\*)\*$/.test(target) && opened('*')) ||
-                (/(?<!_)_$/.test(target) && opened('_')) ||
-                (/(?<!~)~~$/.test(target) && opened('~', 2)) ||
-                (/(?<!~)~$/.test(target) && opened('~'))
-              ) {
-                target = target.slice(
-                  0,
-                  /(?<!~)~~$/.test(target) && opened('~', 2) ? -2 : -1
-                )
-              } else {
-                break
-              }
-            }
-            const parsed = target.length <= 2048
-              ? /^https?:\/\/(?:\[([0-9a-fA-F:]+)\]|([a-zA-Z0-9-\u00a0-\uffff.]+))(?::(\d{1,5}))?(?:[/?#][^\s]*)?$/i
-                .exec(target)
-              : null
-            const portnum = parsed?.[3] !== undefined ? Number.parseInt(parsed[3], 10) : 80
-            if (parsed !== null && portnum >= 1 && portnum <= 65535) {
-              if (parsed[1] !== undefined) {
-                const halves = parsed[1].split('::')
-                const groups = halves.flatMap((section) =>
-                  section.length > 0 ? section.split(':') : []
-                )
-                if (
-                  !parsed[1].includes(':::') &&
-                  !/^:(?!:)|(?<!:):$/.test(parsed[1]) &&
-                  halves.length <= 2 &&
-                  groups.every((group) => /^[0-9a-fA-F]{1,4}$/.test(group)) &&
-                  (halves.length === 2 ? groups.length < 8 : groups.length === 8)
-                ) {
-                  match = { value: target, limit: index + target.length }
+              /^https?:\/\/[^\s<>"{}|\\^`\p{Cc}]+/iu.exec(source.slice(cursor, cursor + 2080))
+                ?.[0] ?? ''
+            if (target.length > 0) {
+              let round = 0, square = 0
+              for (const character of target) {
+                if (character === '(') {
+                  round++
+                } else if (character === ')') {
+                  round--
+                } else if (character === '[') {
+                  square++
+                } else if (character === ']') {
+                  square--
                 }
-              } else {
-                const domain = parsed[2] ?? ''
-                if (
-                  domain.length > 0 &&
-                  domain.length <= 253 &&
-                  domain
-                    .split('.')
-                    .every(
-                      (label) =>
-                        label.length > 0 &&
-                        label.length <= 63 &&
-                        !label.startsWith('-') &&
-                        !label.endsWith('-')
+              }
+              while (target.length > 0) {
+                const stripped = target.replace(/&[a-zA-Z][a-zA-Z0-9]*;$|[?!.,:;']$/, '')
+                if (stripped !== target) {
+                  target = stripped
+                } else if (target.endsWith(')') && round < 0) {
+                  target = target.slice(0, -1)
+                  round++
+                } else if (target.endsWith(']') && square < 0) {
+                  target = target.slice(0, -1)
+                  square++
+                } else if (/(?<!\*)\*\*$/.test(target) && check('*', 2)) {
+                  target = target.slice(0, -2)
+                } else if (/(?<!\*)\*$/.test(target) && check('*')) {
+                  target = target.slice(0, -1)
+                } else if (/(?<!_)__$/.test(target) && check('_', 2)) {
+                  target = target.slice(0, -2)
+                } else if (/(?<!_)_$/.test(target) && check('_')) {
+                  target = target.slice(0, -1)
+                } else if (/(?<!~)~~$/.test(target) && check('~', 2)) {
+                  target = target.slice(0, -2)
+                } else if (/(?<!~)~$/.test(target) && check('~')) {
+                  target = target.slice(0, -1)
+                } else {
+                  break
+                }
+              }
+              const parsed = target.length <= 2048
+                ? /^https?:\/\/(?:\[([0-9a-fA-F:]+)\]|([a-zA-Z0-9-\u00a0-\uffff.]+))(?::(\d{1,5}))?(?:[/?#][^\s]*)?$/i
+                  .exec(target)
+                : null
+              const portnum = parsed?.[3] !== undefined ? Number.parseInt(parsed[3], 10) : 80
+              if (parsed !== null && portnum >= 1 && portnum <= 65535) {
+                if (parsed[1] !== undefined) {
+                  const parts = parsed[1].split('::')
+                  const groups = parts.flatMap((
+                    section
+                  ) => (section.length > 0 ? section.split(':') : []))
+                  if (
+                    !parsed[1].includes(':::') && !/^:(?!:)|(?<!:):$/.test(parsed[1]) &&
+                    parts.length <= 2 && groups.every((group) =>
+                      /^[0-9a-fA-F]{1,4}$/.test(group)
+                    ) && (parts.length === 2 ? groups.length < 8 : groups.length === 8)
+                  ) {
+                    match = { value: target, limit: cursor + target.length }
+                  }
+                } else {
+                  const domain = parsed[2] ?? ''
+                  if (
+                    domain.length > 0 && domain.length <= 253 &&
+                    domain.split('.').every((label) =>
+                      label.length > 0 && label.length <= 63 && !label.startsWith('-') &&
+                      !label.endsWith('-')
                     )
-                ) {
-                  match = { value: target, limit: index + target.length }
+                  ) {
+                    match = { value: target, limit: cursor + target.length }
+                  }
                 }
               }
             }
@@ -203,7 +221,7 @@ export default class Inline {
         }
         if (match !== undefined) {
           append(
-            token === '@' ? { type: 'mention', value: match.value } : {
+            symbol === '@' ? { type: 'mention', value: match.value } : {
               type: 'autolink',
               href: match.value.toWellFormed().replace(
                 /(?!%[0-9A-Fa-f]{2})[^0-9A-Za-z;,/?:@&=+$\-_.!~*'()#[\]]/gu,
@@ -212,76 +230,75 @@ export default class Inline {
               text: match.value
             }
           )
-          index = match.limit
+          cursor = match.limit
           continue
         }
       }
-      if (token === '*' || token === '_' || token === '~') {
-        const series = Inline.series(input, index, token)
-        if ((token !== '~' && series.length > 1) || (token === '~' && series.length > 2)) {
+      if (symbol === '*' || symbol === '_' || symbol === '~') {
+        const series = Inline.series(source, cursor, symbol)
+        const before = source[cursor - 1] ?? ' '
+        const after = source[cursor + series.length] ?? ' '
+        const leading = /[!-/:-@[-`{-~\p{P}\p{S}]/u.test(before)
+        const trailing = /[!-/:-@[-`{-~\p{P}\p{S}]/u.test(after)
+        const opens = /\s/.test(after) === false &&
+          (trailing === false || /\s/.test(before) || leading)
+        const closes = /\s/.test(before) === false &&
+          (leading === false || /\s/.test(after) || trailing)
+        if (series.length > 2 || (!opens && !closes)) {
           append({ type: 'text', value: series })
-          index += series.length
+          cursor += series.length
           continue
         }
-        const before = input[index - 1] ?? ' '
-        const after = input[index + series.length] ?? ' '
-        const symbol = /[!-/:-@[-`{-~\p{P}\p{S}]/u.test(before)
-        const punctuated = /[!-/:-@[-`{-~\p{P}\p{S}]/u.test(after)
-        const opens = /\s/.test(after) === false &&
-          (punctuated === false || /\s/.test(before) || symbol)
-        const closes = /\s/.test(before) === false &&
-          (symbol === false || /\s/.test(after) || punctuated)
         const delimiter: Types.ChatmarkDelimiter = {
-          token,
+          token: symbol as Types.ChatmarkToken,
           entry: append({ type: 'text', value: series }),
           length: series.length,
-          opens: token === '_' ? opens && (closes === false || symbol) : opens,
-          closes: token === '_' ? closes && (opens === false || punctuated) : closes,
-          prior: marker,
+          opens: symbol === '_' ? opens && (!closes || leading) : opens,
+          closes: symbol === '_' ? closes && (!opens || trailing) : closes,
+          prior: latest,
           after: undefined
         }
         let matched = false
         if (delimiter.closes) {
-          for (let cursor = active.length - 1; cursor >= 0; cursor--) {
+          for (let pointer = delimiters.length - 1; pointer >= 0; pointer--) {
             if (
-              active[cursor]?.token === delimiter.token &&
-              active[cursor]?.length === delimiter.length
+              delimiters[pointer]?.token === delimiter.token &&
+              delimiters[pointer]?.length === delimiter.length
             ) {
-              active.length = cursor
+              delimiters.length = pointer
               matched = true
               break
             }
           }
         }
         if (!matched && delimiter.opens) {
-          active.push(delimiter)
+          delimiters.push(delimiter)
         }
-        if (marker !== undefined) {
-          marker.after = delimiter
+        if (latest) {
+          latest.after = delimiter
         } else {
-          first = delimiter
+          origin = delimiter
         }
-        marker = delimiter
-        index += series.length
+        latest = delimiter
+        cursor += series.length
         continue
       }
-      let cursor = index + 1
-      while (cursor < input.length && '\\`*_~@hH\n'.includes(input[cursor] ?? '') === false) {
-        cursor++
+      let advance = cursor + 1
+      while (advance < source.length && '\\`*_~@hH\n'.includes(source[advance] ?? '') === false) {
+        advance++
       }
-      append({ type: 'text', value: input.slice(index, cursor) })
-      index = cursor
+      append({ type: 'text', value: source.slice(cursor, advance) })
+      cursor = advance
     }
     const bottoms = new Map<string, Types.ChatmarkDelimiter | undefined>()
-    for (let closer = first; closer !== undefined; closer = closer.after) {
+    for (let closer = origin; closer !== undefined; closer = closer.after) {
       if (closer.closes === false || closer.length === 0) {
         continue
       }
       const bottom = bottoms.get(`${closer.token}${closer.length}`)
       let opener = closer.prior
       while (
-        opener !== undefined &&
-        opener !== bottom &&
+        opener !== undefined && opener !== bottom &&
         !(opener.opens && opener.length === closer.length && opener.token === closer.token)
       ) {
         opener = opener.prior
@@ -292,39 +309,37 @@ export default class Inline {
         }
         continue
       }
-      const start = slots.indexOf(opener.entry)
-      const finish = slots.indexOf(closer.entry, start + 1)
-      for (const element of [opener.entry.value, closer.entry.value]) {
+      const start = segments.indexOf(opener.entry)
+      const finish = segments.indexOf(closer.entry, start + 1)
+      for (const element of [opener.entry, closer.entry]) {
         if (element.type === 'text') {
           element.value = ''
         }
       }
       opener.length = 0
       closer.length = 0
-      slots.splice(start + 1, finish - start - 1, {
-        value: {
-          type: closer.token === '*' ? 'strong' : closer.token === '_' ? 'emphasis' : 'strike',
-          children: Inline.assemble(slots.slice(start + 1, finish))
-        }
+      segments.splice(start + 1, finish - start - 1, {
+        type: closer.token === '*' ? 'strong' : closer.token === '_' ? 'emphasis' : 'strike',
+        children: Inline.assemble(segments.slice(start + 1, finish))
       })
       if (opener.prior !== undefined) {
         opener.prior.after = closer.after
       } else {
-        first = closer.after
+        origin = closer.after
       }
       if (closer.after !== undefined) {
         closer.after.prior = opener.prior
       }
     }
-    return Inline.assemble(slots)
+    return Inline.assemble(segments)
   }
 
   /**
-   * Read a contiguous identical character run.
-   * @description Slices repeated occurrences of a character from position.
-   * @param input - Full inline source string
-   * @param position - Starting scan index in input
-   * @param character - Target character to match repeatedly
+   * Count contiguous matching characters.
+   * @description Returns substring of repeated characters at position.
+   * @param input - Source string to scan
+   * @param position - Starting index position
+   * @param character - Character to count
    * @returns Substring of contiguous matching characters
    */
   static series(input: string, position: number, character: string): string {
