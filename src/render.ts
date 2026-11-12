@@ -1,15 +1,15 @@
 import type * as Types from '@app/types.ts'
 
 /**
- * HTML renderer for AST.
- * @description Serializes block and inline AST nodes into safe HTML.
+ * HTML renderer for AST nodes.
+ * @description Converts parsed block and inline nodes to HTML.
  */
 export default class Render {
   /**
-   * Render single block AST node.
-   * @description Converts block node into corresponding HTML element.
-   * @param element - Block AST node to render
-   * @returns Serialized HTML string for block
+   * Render block node to HTML.
+   * @description Formats paragraph, blockquote, codeblock, or list element.
+   * @param element - Block AST node
+   * @returns Rendered HTML string
    */
   static block(element: Types.ChatmarkBlock): string {
     if (element.type === 'paragraph') {
@@ -29,18 +29,25 @@ export default class Render {
       element.ordered && element.start !== 1 ? ` start="${element.start}"` : ''
     }>\n${
       element.items
-        .map((entry) =>
-          `<li>${entry.children.map((child) => Render.inlines(child.children)).join('\n')}</li>`
-        )
+        .map((entry) => {
+          const first = entry.children[0]
+          const leading = first === undefined
+            ? ''
+            : first.type === 'paragraph'
+            ? Render.inlines(first.children)
+            : Render.block(first)
+          const trailing = entry.children.slice(1).map((child) => Render.block(child)).join('\n')
+          return `<li>${trailing.length > 0 ? `${leading}\n${trailing}` : leading}</li>`
+        })
         .join('\n')
     }\n</${tagname}>`
   }
 
   /**
-   * Escape special HTML characters safely.
-   * @description Replaces ampersands, angle brackets, quotes with entities.
+   * Escape HTML special characters.
+   * @description Replaces ampersands, angle brackets, and quotes with entities.
    * @param input - Raw string to escape
-   * @returns HTML-escaped string output
+   * @returns Escaped HTML string
    */
   static escape(input: string): string {
     return input.replace(
@@ -50,10 +57,10 @@ export default class Render {
   }
 
   /**
-   * Render inline AST node array.
-   * @description Iteratively serializes nested inline nodes into HTML string.
-   * @param nodes - Inline AST nodes to render
-   * @returns Concatenated HTML string output
+   * Render inline nodes to HTML.
+   * @description Traverses inline node stack to build HTML markup.
+   * @param nodes - Array of inline AST nodes
+   * @returns Rendered inline HTML string
    */
   static inlines(nodes: Types.ChatmarkInline[]): string {
     const stack: Array<Types.ChatmarkInline | string> = [...nodes].reverse()
