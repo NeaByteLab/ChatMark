@@ -1,35 +1,14 @@
 import type * as Types from '@app/types.ts'
 
 /**
- * Inline-level token parser.
- * @description Parses mentions, URLs, code spans, escapes, and emphasis tokens.
+ * Inline-level parser for ChatMark syntax.
+ * @description Parses formatting spans, code, mentions, autolinks, and breaks.
  */
 export default class Inline {
   /**
-   * Merge adjacent text segment nodes.
-   * @description Filters empty text nodes and concatenates adjacent text.
-   * @param segments - Inline nodes to assemble
-   * @returns Compact array of inline nodes
-   */
-  static assemble(segments: Types.ChatmarkInline[]): Types.ChatmarkInline[] {
-    const nodes: Types.ChatmarkInline[] = []
-    for (const segment of segments) {
-      if (segment.type !== 'text' || segment.value.length > 0) {
-        const previous = nodes[nodes.length - 1]
-        if (segment.type === 'text' && previous?.type === 'text') {
-          previous.value += segment.value
-        } else {
-          nodes.push(segment)
-        }
-      }
-    }
-    return nodes
-  }
-
-  /**
-   * Parse inline tokens from markdown.
-   * @description Extracts and resolves all inline formatting tokens.
-   * @param markdown - Inline markdown source string
+   * Parse markdown into inline nodes.
+   * @description Tokenizes inline elements and resolves delimiter pairs.
+   * @param markdown - Raw inline markdown text
    * @returns Array of parsed inline nodes
    */
   static parse(markdown: string): Types.ChatmarkInline[] {
@@ -41,10 +20,6 @@ export default class Inline {
     let cursor = 0
     let scanned = -1
     const backticks = new Map<number, number[]>()
-    const append = (value: Types.ChatmarkInline): Types.ChatmarkInline => {
-      segments.push(value)
-      return value
-    }
     const check = (token: Types.ChatmarkToken, length = 1): boolean =>
       delimiters.some((delimiter) => delimiter.token === token && delimiter.length === length)
     while (cursor < source.length) {
@@ -55,7 +30,7 @@ export default class Inline {
         if (prior?.type === 'text' && broken) {
           prior.value = prior.value.replace(/(?<! ) +$/, '')
         }
-        append(broken ? { type: 'break' } : { type: 'text', value: '\n' })
+        segments.push(broken ? { type: 'break' } : { type: 'text', value: '\n' })
         cursor++
         continue
       }
@@ -63,7 +38,7 @@ export default class Inline {
         const following = source[cursor + 1] ?? ''
         const escaped = following === '\n' ||
           (following.length > 0 && /[!-/:-@[-`{-~]/.test(following))
-        append(
+        segments.push(
           following === '\n'
             ? { type: 'break' }
             : { type: 'text', value: escaped ? following : '\\' }
@@ -78,30 +53,29 @@ export default class Inline {
           let pointer = cursor + length
           while (pointer < source.length && source[pointer] !== '\n') {
             if (source[pointer] === '`') {
-              const run = Inline.series(source, pointer, '`').length
-              const list = backticks.get(run)
-              if (list !== undefined) {
-                list.push(pointer)
+              const runlen = Inline.series(source, pointer, '`').length
+              const existing = backticks.get(runlen)
+              if (existing !== undefined) {
+                existing.push(pointer)
               } else {
-                backticks.set(run, [pointer])
+                backticks.set(runlen, [pointer])
               }
-              pointer += run
+              pointer += runlen
               continue
             }
             pointer++
           }
           scanned = pointer
         }
-        const candidates = backticks.get(length)
-        const closing = candidates?.find((position) => position >= cursor + length)
+        const closing = backticks.get(length)?.find((position) => position >= cursor + length)
         if (closing !== undefined) {
-          append({
+          segments.push({
             type: 'code',
             value: source.slice(cursor + length, closing).replace(/^ (?! +$)(.*) $/, '$1')
           })
           cursor = closing + length
         } else {
-          append({ type: 'text', value: '`'.repeat(length) })
+          segments.push({ type: 'text', value: '`'.repeat(length) })
           cursor += length
         }
         continue
@@ -118,9 +92,20 @@ export default class Inline {
               handle = handle.slice(0, -1)
             }
             let shift = 1
-            if (/(?<!_)__$/.test(handle) && check('_', 2)) {
-              handle = handle.slice(0, -2)
-              shift = 2
+            if (/___$/.test(handle)) {
+              if (check('_', 2)) {
+                handle = handle.slice(0, -2)
+                shift = 2
+              } else if (check('_', 1)) {
+                handle = handle.slice(0, -1)
+              }
+            } else if (/__(?!_)$/.test(handle)) {
+              if (check('_', 2)) {
+                handle = handle.slice(0, -2)
+                shift = 2
+              } else if (check('_', 1)) {
+                handle = handle.slice(0, -1)
+              }
             } else if (/(?<!_)_$/.test(handle) && check('_', 1)) {
               handle = handle.slice(0, -1)
             }
@@ -146,7 +131,8 @@ export default class Inline {
               /^https?:\/\/[^\s<>"{}|\\^`\p{Cc}]+/iu.exec(source.slice(cursor, cursor + 2080))
                 ?.[0] ?? ''
             if (target.length > 0) {
-              let round = 0, square = 0
+              let round = 0
+              let square = 0
               for (const character of target) {
                 if (character === '(') {
                   round++
@@ -159,7 +145,7 @@ export default class Inline {
                 }
               }
               while (target.length > 0) {
-                const stripped = target.replace(/&[a-zA-Z][a-zA-Z0-9]*;$|[?!.,:;']$/, '')
+                const stripped = target.replace(/(?:&[a-zA-Z][a-zA-Z0-9]*;|[?!.,:;'])+$/, '')
                 if (stripped !== target) {
                   target = stripped
                 } else if (target.endsWith(')') && round < 0) {
@@ -199,7 +185,8 @@ export default class Inline {
                     !parsed[1].includes(':::') && !/^:(?!:)|(?<!:):$/.test(parsed[1]) &&
                     parts.length <= 2 && groups.every((group) =>
                       /^[0-9a-fA-F]{1,4}$/.test(group)
-                    ) && (parts.length === 2 ? groups.length < 8 : groups.length === 8)
+                    ) &&
+                    (parts.length === 2 ? groups.length < 8 : groups.length === 8)
                   ) {
                     match = { value: target, limit: cursor + target.length }
                   }
@@ -220,7 +207,7 @@ export default class Inline {
           }
         }
         if (match !== undefined) {
-          append(
+          segments.push(
             symbol === '@' ? { type: 'mention', value: match.value } : {
               type: 'autolink',
               href: match.value.toWellFormed().replace(
@@ -245,19 +232,20 @@ export default class Inline {
         const closes = /\s/.test(before) === false &&
           (leading === false || /\s/.test(after) || trailing)
         if (series.length > 2 || (!opens && !closes)) {
-          append({ type: 'text', value: series })
+          segments.push({ type: 'text', value: series })
           cursor += series.length
           continue
         }
         const delimiter: Types.ChatmarkDelimiter = {
           token: symbol as Types.ChatmarkToken,
-          entry: append({ type: 'text', value: series }),
+          entry: segments.length,
           length: series.length,
           opens: symbol === '_' ? opens && (!closes || leading) : opens,
           closes: symbol === '_' ? closes && (!opens || trailing) : closes,
           prior: latest,
           after: undefined
         }
+        segments.push({ type: 'text', value: series })
         let matched = false
         if (delimiter.closes) {
           for (let pointer = delimiters.length - 1; pointer >= 0; pointer--) {
@@ -287,9 +275,10 @@ export default class Inline {
       while (advance < source.length && '\\`*_~@hH\n'.includes(source[advance] ?? '') === false) {
         advance++
       }
-      append({ type: 'text', value: source.slice(cursor, advance) })
+      segments.push({ type: 'text', value: source.slice(cursor, advance) })
       cursor = advance
     }
+    const wrappers = new Map<number, { type: 'strong' | 'emphasis' | 'strike'; finish: number }>()
     const bottoms = new Map<string, Types.ChatmarkDelimiter | undefined>()
     for (let closer = origin; closer !== undefined; closer = closer.after) {
       if (closer.closes === false || closer.length === 0) {
@@ -309,19 +298,20 @@ export default class Inline {
         }
         continue
       }
-      const start = segments.indexOf(opener.entry)
-      const finish = segments.indexOf(closer.entry, start + 1)
-      for (const element of [opener.entry, closer.entry]) {
-        if (element.type === 'text') {
+      for (const element of [segments[opener.entry], segments[closer.entry]]) {
+        if (element?.type === 'text') {
           element.value = ''
         }
       }
       opener.length = 0
       closer.length = 0
-      segments.splice(start + 1, finish - start - 1, {
+      wrappers.set(opener.entry, {
         type: closer.token === '*' ? 'strong' : closer.token === '_' ? 'emphasis' : 'strike',
-        children: Inline.assemble(segments.slice(start + 1, finish))
+        finish: closer.entry
       })
+      for (let inner = opener.after; inner !== undefined && inner !== closer; inner = inner.after) {
+        inner.length = 0
+      }
       if (opener.prior !== undefined) {
         opener.prior.after = closer.after
       } else {
@@ -331,16 +321,41 @@ export default class Inline {
         closer.after.prior = opener.prior
       }
     }
-    return Inline.assemble(segments)
+    const stack: Array<{ children: Types.ChatmarkInline[]; finish: number }> = [
+      { children: [], finish: segments.length }
+    ]
+    for (let index = 0; index < segments.length; index++) {
+      while (stack.length > 1 && stack[stack.length - 1]?.finish === index) {
+        stack.pop()
+      }
+      const wrapper = wrappers.get(index)
+      if (wrapper !== undefined) {
+        const children: Types.ChatmarkInline[] = []
+        stack[stack.length - 1]?.children.push({ type: wrapper.type, children })
+        stack.push({ children, finish: wrapper.finish })
+        continue
+      }
+      const segment = segments[index]!
+      if (segment.type !== 'text' || segment.value.length > 0) {
+        const current = stack[stack.length - 1]!.children
+        const previous = current[current.length - 1]
+        if (segment.type === 'text' && previous?.type === 'text') {
+          previous.value += segment.value
+        } else {
+          current.push(segment)
+        }
+      }
+    }
+    return stack[0]!.children
   }
 
   /**
-   * Count contiguous matching characters.
-   * @description Returns substring of repeated characters at position.
+   * Extract consecutive identical characters.
+   * @description Scans input from position for repeated target character.
    * @param input - Source string to scan
    * @param position - Starting index position
-   * @param character - Character to count
-   * @returns Substring of contiguous matching characters
+   * @param character - Target character to match
+   * @returns Substring of repeated characters
    */
   static series(input: string, position: number, character: string): string {
     let cursor = position
