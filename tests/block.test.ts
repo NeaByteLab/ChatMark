@@ -25,6 +25,25 @@ Deno.test('block - interrupts paragraphs and list items', () => {
   )
 })
 
+Deno.test('block - nests indented lists inside items', () => {
+  Assert.assertEquals(
+    Chatmark.html('1. xxx\n  - xxx\n  - xxx\n2. yyy'),
+    '<ol>\n<li>xxx\n<ul>\n<li>xxx</li>\n<li>xxx</li>\n</ul></li>\n<li>yyy</li>\n</ol>'
+  )
+  Assert.assertEquals(
+    Chatmark.html('- a\n  - b\n    - c\n- d'),
+    '<ul>\n<li>a\n<ul>\n<li>b\n<ul>\n<li>c</li>\n</ul></li>\n</ul></li>\n<li>d</li>\n</ul>'
+  )
+  Assert.assertEquals(
+    Chatmark.html('1. one\n   1. sub one\n   2. sub two\n2. two'),
+    '<ol>\n<li>one\n<ol>\n<li>sub one</li>\n<li>sub two</li>\n</ol></li>\n<li>two</li>\n</ol>'
+  )
+  Assert.assertEquals(
+    Chatmark.html('- bullet\n1. ordered\n  - nested'),
+    '<ul>\n<li>bullet</li>\n</ul>\n<ol>\n<li>ordered\n<ul>\n<li>nested</li>\n</ul></li>\n</ol>'
+  )
+})
+
 Deno.test('block - parses blockquotes and nested blockquotes', () => {
   Assert.assertEquals(Chatmark.html('>'), '<blockquote>\n</blockquote>')
   Assert.assertEquals(
@@ -59,12 +78,12 @@ Deno.test('block - parses single and multiple paragraphs', () => {
 
 Deno.test('block - parses unordered and ordered lists', () => {
   Assert.assertEquals(
-    Chatmark.html('- first\n  continued\n  - sub bullet flattened\n\ttab line\n- second\n-'),
-    '<ul>\n<li>first\ncontinued\n- sub bullet flattened\ntab line</li>\n<li>second</li>\n<li></li>\n</ul>'
+    Chatmark.html('- first\n  continued\n  - sub bullet\n\ttab line\n- second\n-'),
+    '<ul>\n<li>first\ncontinued\n<ul>\n<li>sub bullet</li>\n</ul>\n<p>tab line</p></li>\n<li>second</li>\n<li></li>\n</ul>'
   )
   Assert.assertEquals(
-    Chatmark.html('1. third\n   continued\n   1. sub ordered flattened\n1. fourth\n1.'),
-    '<ol>\n<li>third\ncontinued\n1. sub ordered flattened</li>\n<li>fourth</li>\n<li></li>\n</ol>'
+    Chatmark.html('1. third\n   continued\n   1. sub ordered\n1. fourth\n1.'),
+    '<ol>\n<li>third\ncontinued\n<ol>\n<li>sub ordered</li>\n</ol></li>\n<li>fourth</li>\n<li></li>\n</ol>'
   )
 })
 
